@@ -1149,35 +1149,27 @@ An Array (#{env.inspect}) was passed in from #{caller[3]}
     path = path.dup
 
     if path == "-" then
-      require 'rubygems/util'
-
-      Gem::Util.traverse_parents Dir.pwd do |directory|
-        dep_file = GEM_DEP_FILES.find { |f| File.file?(f) }
-
-        next unless dep_file
-
-        path = File.join directory, dep_file
-        break
-      end
+      require 'bundler/shared_helpers'
+      found = Bundler::SharedHelpers.send(:find_file, *GEM_DEP_FILES)
+      path = found if found
     end
 
     path.untaint
 
-    unless File.file? path then
+    unless File.file?(path) then
       return unless raise_exception
 
       raise ArgumentError, "Unable to find gem dependencies file at #{path}"
     end
 
-    rs = Gem::RequestSet.new
-    @gemdeps = rs.load_gemdeps path
-
-    rs.resolve_current.map do |s|
-      sp = s.full_spec
-      sp.activate
-      sp
+    ENV["BUNDLE_GEMFILE"] ||= File.expand_path(path)
+    DefaultUserInteraction.use_ui(ui) do
+      require "bundler"
+      @gemdeps = Bundler.setup
+      Bundler.ui = nil
+      @gemdeps.requested_specs.map(&:to_spec).sort_by(&:name)
     end
-  rescue Gem::LoadError, Gem::UnsatisfiableDependencyError => e
+  rescue Gem::LoadError, Gem::UnsatisfiableDependencyError, Bundler::GemNotFound => e
     warn e.message
     warn "You may need to `gem install -g` to install missing gems"
     warn ""
